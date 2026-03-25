@@ -69,6 +69,30 @@ def _get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
     return np.concatenate([np.sin(out), np.cos(out)], axis=1)
 
 
+def interpolate_pos_embed(pos_embed, new_num_patches):
+    """
+    对固定位置编码做双三次插值, 支持可变分辨率输入
+
+    pos_embed: [1, N_old, D] (训练时的位置编码)
+    new_num_patches: 推理时的token数量
+
+    返回: [1, N_new, D]
+    """
+    N_old = pos_embed.shape[1]
+    if N_old == new_num_patches:
+        return pos_embed
+    D = pos_embed.shape[2]
+    old_grid = int(N_old ** 0.5)
+    new_grid = int(new_num_patches ** 0.5)
+    # [1, N, D] → [1, D, h, w]
+    pos_2d = pos_embed.reshape(1, old_grid, old_grid, D).permute(0, 3, 1, 2)
+    pos_2d = F.interpolate(
+        pos_2d.float(), size=(new_grid, new_grid),
+        mode="bicubic", align_corners=False,
+    )
+    return pos_2d.permute(0, 2, 3, 1).reshape(1, new_num_patches, D)
+
+
 # =============================================================================
 #  Drop Path (随机深度正则化)
 # =============================================================================
@@ -798,16 +822,22 @@ class DiTPan(nn.Module):
 
         # ========== Token化 ==========
         # 主干输入token
-        x_tokens = self.x_embedder(x) + self.pos_embed  # [B, N, D]
+        x_tokens = self.x_embedder(x)  # [B, N_actual, D]
+        N_actual = x_tokens.shape[1]
+
+        # 位置编码: 如果输入分辨率与训练时不同, 插值位置编码
+        x_tokens = x_tokens + interpolate_pos_embed(self.pos_embed, N_actual)
 
         # 时间步嵌入
         t_emb = self.t_embedder(time)  # [B, D]
 
         # CSM条件token (卷积编码 + 位置编码)
-        cond_tokens = self.cond_embedder(csm_cond) + self.cond_pos_embed  # [B, N, D]
+        cond_tokens = self.cond_embedder(csm_cond)
+        cond_tokens = cond_tokens + interpolate_pos_embed(self.cond_pos_embed, cond_tokens.shape[1])
 
         # FWM小波token (卷积编码 + 位置编码)
-        wav_tokens = self.wavelet_embedder(fwm_cond) + self.wavelet_pos_embed  # [B, N, D]
+        wav_tokens = self.wavelet_embedder(fwm_cond)
+        wav_tokens = wav_tokens + interpolate_pos_embed(self.wavelet_pos_embed, wav_tokens.shape[1])
 
         # ========== Transformer Blocks ==========
         for block in self.blocks:

@@ -109,7 +109,7 @@ def model_load(
             odict = OrderedDict()
             # remove module.
             for k, v in params.items():
-                k.replace("module.", "")
+                k = k.replace("module.", "")
                 odict[k] = v
 
             model.load_state_dict(odict, strict=strict)
@@ -130,7 +130,7 @@ def _regardless_keys_unmatch_shape_unmatch(model, state_dict):
             if v.shape == state_dict2[k].shape:
                 state_dict1[k] = state_dict2[k]
     model.load_state_dict(state_dict1)
-    return
+    return model
 
 
 def list_tensor2_list_list(list_tensor, n, mode="time"):
