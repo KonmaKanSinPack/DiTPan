@@ -84,7 +84,15 @@ def test(args):
       5. 结果保存: .mat格式 + 可视化图像 ✓
     """
     device = args.device
-    torch.cuda.set_device(device)
+    if device != "cpu" and torch.cuda.is_available():
+        try:
+            torch.cuda.set_device(device)
+        except Exception:
+            print(f"警告: 无法设置CUDA设备 {device}, 回退到CPU")
+            device = "cpu"
+    elif device != "cpu":
+        print("警告: CUDA不可用, 回退到CPU")
+        device = "cpu"
 
     # =================== 配置 ===================
     image_n_channel, pan_channel = get_dataset_config(args.dataset_name)
@@ -123,7 +131,8 @@ def test(args):
     diffusion.set_new_noise_schedule(
         sqrt_etas=make_sqrt_etas_schedule(
             schedule=args.schedule_type, n_timestep=args.n_steps
-        )
+        ),
+        device=device,
     )
     diffusion = diffusion.to(device)
     diffusion.model.eval()

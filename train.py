@@ -10,7 +10,7 @@
 #   5. 保存最优模型 (按SAM指标)
 #
 # 使用方式:
-#   python train.py --dataset wv3 --train_path data/wv3/train_wv3.h5 \
+#   python train.py --dataset_name wv3 --train_path data/wv3/train_wv3.h5 \
 #                   --valid_path data/wv3/test_wv3_multiExm1.h5
 # =============================================================================
 
@@ -88,7 +88,15 @@ def train(args):
       5. EMA: 指数移动平均模型用于推理 ✓
     """
     device = args.device
-    torch.cuda.set_device(device)
+    if device != "cpu" and torch.cuda.is_available():
+        try:
+            torch.cuda.set_device(device)
+        except Exception:
+            print(f"警告: 无法设置CUDA设备 {device}, 回退到CPU")
+            device = "cpu"
+    elif device != "cpu":
+        print("警告: CUDA不可用, 回退到CPU")
+        device = "cpu"
 
     # =================== 配置 ===================
     image_n_channel, add_n_channel = get_dataset_config(args.dataset_name)
@@ -96,6 +104,8 @@ def train(args):
     # =================== 日志 ===================
     stf_time = time.strftime("%m-%d_%H-%M", time.localtime())
     comment = f"DiTPan_{args.dataset_name}"
+    os.makedirs(os.path.join(args.log_dir, "runs"), exist_ok=True)
+    os.makedirs(os.path.join(args.log_dir, "logs"), exist_ok=True)
     logger = TensorboardLogger(
         file_logger_name=f"{stf_time}-{comment}",
         place=os.path.join(args.log_dir, "runs"),
@@ -167,7 +177,8 @@ def train(args):
     diffusion.set_new_noise_schedule(
         sqrt_etas=make_sqrt_etas_schedule(
             schedule=args.schedule_type, n_timestep=args.n_steps
-        )
+        ),
+        device=device,
     )
     diffusion = diffusion.to(device)
 
